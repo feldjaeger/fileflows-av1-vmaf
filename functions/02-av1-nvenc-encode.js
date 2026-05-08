@@ -54,7 +54,13 @@ let args = [
     '-cq', String(cq),
     '-b:v', '0',
     '-spatial-aq', '1',
-    '-pix_fmt', 'p010le',
+    // Bit depth: do NOT set `-pix_fmt p010le` here. With
+    // `-hwaccel_output_format cuda` decoded frames stay on the GPU,
+    // and forcing p010le triggers an implicit `hwdownload` + swscale
+    // path that breaks filter-graph negotiation on 10-bit HDR sources
+    // ("Error reinitializing filters!"). av1_nvenc accepts CUDA
+    // surfaces natively and inherits the source bit depth — 10-bit in
+    // → 10-bit out, 8-bit in → 8-bit out.
     '-c:a', 'copy',
     '-c:s', 'copy',
     '-map_chapters', '0',
