@@ -1,0 +1,22 @@
+{
+  "_comment": "Skeleton flow definition. Build the flow once in the FileFlows UI per AV1-VMAF-Pipeline.md, then re-export it over this file. The shape of FileFlows flow JSON varies between FF versions, so a hand-written file is unlikely to import cleanly — this skeleton exists so that once you do export, the diff stays minimal.",
+  "Name": "AV1 VMAF Pipeline",
+  "Description": "4K HEVC → AV1 NVENC re-encode with libvmaf_cuda quality gate",
+  "Type": 0,
+  "Enabled": true,
+  "Parts": [],
+  "Properties": {
+    "Variables": {
+      "FFmpegPath":        "/opt/ffmpeg-custom/bin/ffmpeg",
+      "FFprobePath":       "/opt/ffmpeg-custom/bin/ffprobe",
+      "CQ_SDR":            28,
+      "CQ_HDR":            30,
+      "MeanThreshold":     95,
+      "P25Threshold":      93,
+      "VMAFModel":         "version=vmaf_4k_v0.6.1",
+      "VMAFThreads":       8,
+      "SampleSeconds":     60,
+      "MaxEncodeAttempts": 3
+    }
+  }
+}

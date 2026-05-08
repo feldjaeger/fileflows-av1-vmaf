@@ -1,0 +1,78 @@
+# FileFlows + custom ffmpeg-vmaf-cuda integration via the volume-mount pattern.
+#
+# The "ffmpeg-init" service is a oneshot container: at every compose-up it pulls
+# the latest ffmpeg-vmaf-cuda image and copies the binaries + supporting libs +
+# VMAF models onto the named volume. FileFlows mounts that volume read-only at
+# /opt/ffmpeg-custom and is configured (via env or via the UI) to use the
+# custom binary.
+#
+# This avoids rebuilding the FileFlows image on every FileFlows release.
+
+services:
+
+  ffmpeg-init:
+    image: ghcr.io/feldjaeger/ffmpeg-vmaf-cuda:${FFMPEG_VMAF_TAG:-latest}
+    container_name: ffmpeg-init
+    pull_policy: always
+    # Override the entrypoint of the ffmpeg image (which is `ffmpeg`) and run a
+    # provisioning script instead. Exits 0 on success → FileFlows can start.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "[ffmpeg-init] provisioning /target ..."
+        mkdir -p /target/bin /target/lib /target/share
+
+        cp -f /usr/local/bin/ffmpeg  /target/bin/ffmpeg
+        cp -f /usr/local/bin/ffprobe /target/bin/ffprobe
+
+        # libvmaf shared library
+        cp -af /usr/local/lib/libvmaf.so* /target/lib/
+
+        # codec libs ffmpeg is dynamically linked against
+        for lib in libx264 libx265 libsvtav1 libsvtav1enc libdav1d libopus; do
+            cp -af /usr/lib/x86_64-linux-gnu/${lib}.so* /target/lib/ 2>/dev/null || true
+        done
+
+        # VMAF models on disk (built-in models also exist inside libvmaf)
+        rm -rf /target/share/vmaf
+        cp -af /usr/local/share/vmaf /target/share/
+
+        chmod -R a+rX /target
+
+        echo "[ffmpeg-init] done."
+        /target/bin/ffmpeg -hide_banner -version | head -1
+    volumes:
+      - ffmpeg_custom:/target
+    restart: "no"
+
+  fileflows:
+    image: revenz/fileflows:${FILEFLOWS_TAG:-latest}
+    container_name: fileflows
+    depends_on:
+      ffmpeg-init:
+        condition: service_completed_successfully
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      TZ: ${TZ:-Europe/Berlin}
+      # Make the custom ffmpeg's bundled libs discoverable.
+      LD_LIBRARY_PATH: /opt/ffmpeg-custom/lib
+      # libvmaf will look here for on-disk models if the filter is given a path.
+      VMAF_MODEL_PATH: /opt/ffmpeg-custom/share/vmaf/model
+    ports:
+      - "${FILEFLOWS_PORT:-19200}:5000"
+    volumes:
+      - fileflows_data:/app/Data
+      - fileflows_logs:/app/Logs
+      - ffmpeg_custom:/opt/ffmpeg-custom:ro
+      # Adjust these to your library layout.
+      - ${MEDIA_PATH:-/srv/media}:/media
+      - ${TEMP_PATH:-/srv/fileflows-temp}:/temp
+    restart: unless-stopped
+
+volumes:
+  ffmpeg_custom:
+  fileflows_data:
+  fileflows_logs:
