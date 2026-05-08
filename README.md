@@ -54,6 +54,20 @@ flow/
 
 ## Quick start
 
+Two integration patterns:
+
+- **Standalone** (`compose/docker-compose.yml`) — bring up FileFlows + the
+  ffmpeg-init service from scratch. Use this if you don't have FileFlows
+  running yet.
+- **Override** (`compose/compose.override.yaml.example`) — drop next to
+  an existing `compose.yaml` that already runs FileFlows; Compose merges
+  it in. Adds the ffmpeg-init service and the `ffmpeg_custom` volume
+  mount without touching the existing service definition. The fileflows
+  container is recreated once on `compose up -d`. Used in the homelab
+  Tdarr/FileFlows stack and verified end-to-end.
+
+### Standalone
+
 1. Build / pull the custom ffmpeg image:
 
    ```bash

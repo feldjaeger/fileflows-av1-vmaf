@@ -29,10 +29,16 @@ services:
         # libvmaf shared library
         cp -af /usr/local/lib/libvmaf.so* /target/lib/
 
-        # codec libs ffmpeg is dynamically linked against
-        for lib in libx264 libx265 libsvtav1 libsvtav1enc libdav1d libopus; do
-            cp -af /usr/lib/x86_64-linux-gnu/${lib}.so* /target/lib/ 2>/dev/null || true
-        done
+        # codec libs ffmpeg is dynamically linked against.
+        # libSvtAv1Enc is mixed-case in Debian/Ubuntu packaging — the
+        # lowercase form does not exist on disk, ffmpeg's DT_NEEDED
+        # records the exact filename. Enumerate explicitly so we don't
+        # tangle with shell-var interpolation in inline compose commands.
+        cp -af /usr/lib/x86_64-linux-gnu/libx264.so*       /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libx265.so*       /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libSvtAv1Enc.so*  /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libdav1d.so*      /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libopus.so*       /target/lib/ 2>/dev/null || true
 
         # VMAF models on disk (built-in models also exist inside libvmaf)
         rm -rf /target/share/vmaf

@@ -1,0 +1,68 @@
+# Drop next to /data/stacks/tdarr/compose.yaml — Compose merges automatically.
+#
+# What this adds:
+#   * ffmpeg-init    : oneshot service that pulls ghcr.io/feldjaeger/ffmpeg-vmaf-cuda
+#                      and copies the custom ffmpeg + libvmaf + codec libs onto a
+#                      named volume `ffmpeg_custom`.
+#   * fileflows      : extra volume mount `ffmpeg_custom:/opt/ffmpeg-custom:ro` plus
+#                      LD_LIBRARY_PATH so the bundled libs are picked up at runtime.
+#                      depends_on the init service so binaries land before FileFlows
+#                      starts.
+#
+# `docker compose up -d` will recreate the fileflows container (fast, /app/Data is
+# bind-mounted so no state loss). The ffmpeg-init container exits 0 after copying.
+
+services:
+
+  ffmpeg-init:
+    image: ghcr.io/feldjaeger/ffmpeg-vmaf-cuda:latest
+    container_name: ffmpeg-init
+    pull_policy: always
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "[ffmpeg-init] provisioning /target ..."
+        mkdir -p /target/bin /target/lib /target/share
+
+        cp -f /usr/local/bin/ffmpeg  /target/bin/ffmpeg
+        cp -f /usr/local/bin/ffprobe /target/bin/ffprobe
+
+        # libvmaf shared library (image keeps it under /usr/local/lib)
+        cp -af /usr/local/lib/libvmaf.so* /target/lib/
+
+        # codec libs ffmpeg is dynamically linked against.
+        # Note: libSvtAv1Enc has mixed case in Debian/Ubuntu packaging,
+        # not the lowercase form. ffmpeg's DT_NEEDED expects the exact name.
+        cp -af /usr/lib/x86_64-linux-gnu/libx264.so*       /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libx265.so*       /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libSvtAv1Enc.so*  /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libdav1d.so*      /target/lib/ 2>/dev/null || true
+        cp -af /usr/lib/x86_64-linux-gnu/libopus.so*       /target/lib/ 2>/dev/null || true
+
+        # VMAF models on disk
+        rm -rf /target/share/vmaf
+        cp -af /usr/local/share/vmaf /target/share/
+
+        chmod -R a+rX /target
+
+        /target/bin/ffmpeg -hide_banner -version | head -1
+        echo "[ffmpeg-init] done."
+    volumes:
+      - ffmpeg_custom:/target
+    restart: "no"
+
+  fileflows:
+    depends_on:
+      ffmpeg-init:
+        condition: service_completed_successfully
+    environment:
+      # Make the bundled libs (libvmaf, codec libs) discoverable to /opt/ffmpeg-custom/bin/ffmpeg.
+      LD_LIBRARY_PATH: /opt/ffmpeg-custom/lib
+      # libvmaf will look here for on-disk models if a path is given.
+      VMAF_MODEL_PATH: /opt/ffmpeg-custom/share/vmaf/model
+    volumes:
+      - ffmpeg_custom:/opt/ffmpeg-custom:ro
+
+volumes:
+  ffmpeg_custom:
