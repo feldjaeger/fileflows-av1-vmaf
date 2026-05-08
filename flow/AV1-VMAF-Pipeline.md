@@ -87,6 +87,23 @@ These are FileFlows' built-in **Video** flow elements:
 
 Both are stock nodes; no custom JS required.
 
+## Known caveat: sample timestamp alignment
+
+`03-sample-extraction.js` uses `-ss <pos> -i <file> -c copy`, which seeks
+to the nearest keyframe at-or-before `pos`. HEVC source and AV1 encode
+have different GOP structures, so the two samples for one position may
+land on slightly different keyframes — and libvmaf compares frame-by-frame
+in input order. Mild misalignment (< GOP) tends to cancel out across the
+3 × 60 s pool, but a worst-case "ref starts 4 s before dist" sample
+will tank the score.
+
+If you see surprising VMAF drops on otherwise visually clean encodes,
+switch the extraction to re-encode the samples instead of stream-copy
+(slow but frame-accurate). Easiest tweak: replace `-c copy` with
+`-c:v libx264 -crf 0 -preset ultrafast` — re-encodes losslessly to a
+dummy intermediate, but timestamps are now exact. The libvmaf compare
+then runs unaffected.
+
 ## Verify checklist
 
 After importing the flow and running on a representative library:
