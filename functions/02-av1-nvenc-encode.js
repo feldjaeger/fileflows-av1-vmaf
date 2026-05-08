@@ -37,11 +37,13 @@ let args = [
     '-y', '-hide_banner',
     '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
     '-i', inputFile,
-    // Map video + audio + subs, skip attachments + data streams.
-    // UHD Blu-ray remuxes carry cover-art attachments (cover.jpg, mimetype
-    // image/jpeg) which ffmpeg tries to decode as PNG/MJPEG when present
-    // under -map 0; without -c:t copy this fails. Easier to drop them.
-    '-map', '0:v',
+    // Map real video + audio + subs. Cover-art attachments on UHD
+    // Blu-ray remuxes are exposed by ffprobe as Stream 'Video: png/mjpeg
+    // (attached pic)' — lowercase 'v' selector picks them up too, and
+    // ffmpeg then tries to decode the cover with the pixel-art codec
+    // and dies with "no decoder found for: png" / "Invalid argument".
+    // Uppercase 'V' selects video streams *excluding* attached_pic.
+    '-map', '0:V',
     '-map', '0:a?',
     '-map', '0:s?',
     '-c:v', 'av1_nvenc',
