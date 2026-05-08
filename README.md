@@ -31,9 +31,11 @@ flow/
   init container copies the custom ffmpeg + libvmaf + codec libs onto
   a named volume that FileFlows mounts read-only at `/opt/ffmpeg-custom`.
   Survives FileFlows updates because we never modify the FileFlows image.
-- **GPL build** of ffmpeg — the custom-ffmpeg image is freely
-  redistributable. Audio is always copy-passthrough so we don't need
-  libfdk-aac or any other nonfree dep.
+- **GPL + nonfree build** of ffmpeg — `--enable-cuda-nvcc` requires
+  `--enable-nonfree`, so the resulting binary is not redistributable
+  under GPL terms (build it yourself, or pull from a personal-use
+  registry). Audio is always copy-passthrough so we don't need
+  libfdk-aac.
 - **HDR10+ is downgraded to HDR10**. av1_nvenc has no dynamic-metadata
   passthrough today; rather than building a hdr10plus_tool detour we
   let HDR10+ sources land as HDR10. Static mastering display + maxCLL
