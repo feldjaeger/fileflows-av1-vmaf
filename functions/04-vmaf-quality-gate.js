@@ -1,9 +1,27 @@
 // ===================================================================
-// VMAF Quality Gate (FileFlows Function node, libvmaf_cuda)
+// VMAF Quality Gate (FileFlows Function node)
 // -------------------------------------------------------------------
-// Runs libvmaf_cuda over each (ref, dist) sample pair, aggregates
-// per-frame VMAF scores across all samples, computes mean / p25 /
-// harmonic_mean, and judges pass/fail.
+// Runs libvmaf over each (ref, dist) sample pair, aggregates per-frame
+// VMAF scores across all samples, computes mean / p25 / harmonic_mean,
+// and judges pass/fail.
+//
+// We currently use the CPU libvmaf filter, NOT libvmaf_cuda. The CUDA
+// filter in libvmaf 3.0.0 / 3.1.0 has a regression where it processes
+// the first frame fine and then errors out with "problem during
+// vmaf_read_pictures" -> -22 on every subsequent frame. Reproduced
+// against ffmpeg n8.1.1 + libvmaf v3.1.0 with both hwupload_cuda and
+// NVDEC frame paths, with and without scale_cuda. Same upstream bug is
+// tracked at https://github.com/Netflix/vmaf/issues/1423 — open as of
+// 2026-05-08, no fix.
+//
+// CPU libvmaf with n_threads=8 is fast enough for 3 × 60 s samples on
+// modern hardware (~250 fps for 1080p, ~40-60 fps for 4K → roughly
+// 1-2 min per 4K sample, ~5 min total per VMAF run — acceptable for an
+// out-of-band quality gate).
+//
+// To switch back to GPU once libvmaf_cuda is fixed: replace `libvmaf=`
+// in the filter chain below with the hwupload_cuda + libvmaf_cuda
+// variant, set Variables.UseGPUVMAF=true if you want a flow toggle.
 //
 // Output ports (deviating slightly from the spec for clarity — the
 // retry/hard-fail decision lives in the Loop Counter node):
@@ -48,12 +66,9 @@ for (let i = 0; i < refs.length; i++) {
     let dist = dists[i];
     let logPath = Flow.TempPath + '/vmaf_' + i + '_' + Flow.NewGuid() + '.json';
 
-    // Filter: upload both inputs to CUDA, then run libvmaf_cuda.
-    // Input order to libvmaf is [distorted][reference].
+    // CPU libvmaf — input order is [distorted][reference].
     let filter =
-        '[0:v]hwupload_cuda[ref];' +
-        '[1:v]hwupload_cuda[dist];' +
-        '[dist][ref]libvmaf_cuda=' +
+        '[1:v][0:v]libvmaf=' +
             'log_path=' + logPath +
             ':log_fmt=json' +
             ':n_threads=' + nThreads +
@@ -65,13 +80,13 @@ for (let i = 0; i < refs.length; i++) {
             '-y', '-hide_banner', '-loglevel', 'error',
             '-i', ref,
             '-i', dist,
-            '-filter_complex', filter,
+            '-lavfi', filter,
             '-f', 'null', '-'
         ]
     });
 
     if (r.exitCode !== 0) {
-        Logger.ELog('libvmaf_cuda failed on sample ' + i + ': ' + r.standardError.slice(-1500));
+        Logger.ELog('libvmaf failed on sample ' + i + ': ' + r.standardError.slice(-1500));
         return 2;
     }
 

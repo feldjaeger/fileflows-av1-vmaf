@@ -43,6 +43,12 @@ flow/
 - **Dolby Vision is skipped**, not transcoded.
 - **Quality gate uses mean ≥ 95 AND p25 ≥ 93** by default. p25 catches
   short-but-bad regions that mean-only would average away.
+- **VMAF runs on CPU (`libvmaf` filter), not GPU (`libvmaf_cuda`).**
+  The CUDA filter in libvmaf 3.0.0 / 3.1.0 has an upstream bug that
+  errors out after the first frame; see
+  https://github.com/Netflix/vmaf/issues/1423. The custom ffmpeg
+  image still ships `libvmaf_cuda` so the pipeline can switch back
+  once the upstream regression is fixed.
 - **Retry tightens CQ by 2 each iteration**, capped at 3 attempts then
   hard-fail.
 
