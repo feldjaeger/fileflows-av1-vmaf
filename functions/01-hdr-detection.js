@@ -3,15 +3,20 @@
 // -------------------------------------------------------------------
 // Output ports:
 //   1 = SDR
-//   2 = HDR10
-//   3 = HDR10+   (will be re-encoded as HDR10 — av1_nvenc has no
-//                 dynamic-metadata passthrough; this is by design.)
-//   4 = Dolby Vision  → skip + tag
+//   2 = HDR10           (also: DV Profile 7/8 with HDR10 base — RPU is
+//                        dropped during av1_nvenc re-encode, HDR10 base
+//                        is preserved)
+//   3 = HDR10+          (degraded to HDR10 during encode — av1_nvenc
+//                        has no dynamic-metadata passthrough, by design)
+//   4 = DV-only / skip  (Profile 5: no HDR10 fallback — would need
+//                        dovi_tool tonemap, not implemented)
 //
 // Variables set:
 //   HDRType        "SDR" | "HDR10" | "HDR10+" | "DV"
 //   MasterDisplay  x265-style "G(...)B(...)R(...)WP(...)L(...)" string or null
 //   MaxCLL         "<maxCLL>,<maxFALL>" or null
+//   HasDV          true when a DV layer was detected (even if routed
+//                  to HDR10 path), so logging downstream can flag it
 //   DVProfile      Dolby Vision profile number, or null
 // -------------------------------------------------------------------
 // ffprobe path is taken from Variables.FFprobePath (set in Flow Settings)
@@ -55,18 +60,8 @@ let colorTransfer = (stream.color_transfer || frame.color_transfer || '').toLowe
 let isPQ  = colorTransfer === 'smpte2084';
 let isHLG = colorTransfer === 'arib-std-b67';
 
-// ---- Dolby Vision -------------------------------------------------
-let dvSide = sideDataList.find(sd =>
-    sd.side_data_type && /dovi|dolby vision/i.test(sd.side_data_type)
-);
-if (dvSide) {
-    Variables.HDRType   = 'DV';
-    Variables.DVProfile = dvSide.dv_profile != null ? Number(dvSide.dv_profile) : null;
-    Logger.ILog('HDR Detection: Dolby Vision (profile ' + Variables.DVProfile + ') — skipping');
-    return 4;
-}
-
-// ---- HDR static metadata (used for both HDR10 and HDR10+) ---------
+// ---- HDR static metadata (extract first — needed both to decide
+//      whether DV has an HDR10 fallback, and for the encode node) ---
 function evalFrac(s) {
     if (s == null) return NaN;
     if (typeof s === 'number') return s;
@@ -96,6 +91,31 @@ if (masteringSide) {
 
 let cllSide = sideDataList.find(sd => sd.side_data_type === 'Content light level metadata');
 Variables.MaxCLL = cllSide ? (cllSide.max_content + ',' + cllSide.max_average) : null;
+
+let hasHDR10Base = !!Variables.MasterDisplay;   // mastering display present → HDR10 base layer is there
+
+// ---- Dolby Vision -------------------------------------------------
+let dvSide = sideDataList.find(sd =>
+    sd.side_data_type && /dovi|dolby vision/i.test(sd.side_data_type)
+);
+if (dvSide) {
+    Variables.HasDV     = true;
+    Variables.DVProfile = dvSide.dv_profile != null ? Number(dvSide.dv_profile) : null;
+    if (!hasHDR10Base) {
+        // Profile 5 (DV-only, IPT-PQ-c2). No HDR10 base layer, would need
+        // dovi_tool to tonemap into BT.2020-PQ. We don't ship dovi_tool.
+        Variables.HDRType = 'DV';
+        Logger.ILog('HDR Detection: DV-only (profile ' + Variables.DVProfile +
+                    ', no HDR10 base) — skipping');
+        return 4;
+    }
+    // Profile 7 / 8: HDR10 base layer is present alongside the DV RPU.
+    // av1_nvenc has no DV passthrough, so we drop the DV layer and
+    // re-encode the HDR10 base. Falls through to the HDR10+/HDR10 path
+    // below, which propagates mastering display + MaxCLL.
+    Logger.ILog('HDR Detection: DV+HDR10 (profile ' + Variables.DVProfile +
+                ') — encoding as HDR10, dropping DV RPU');
+}
 
 // ---- HDR10+ -------------------------------------------------------
 let hdr10plusSide = sideDataList.find(sd =>
