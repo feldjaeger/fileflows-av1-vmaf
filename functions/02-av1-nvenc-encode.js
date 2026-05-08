@@ -37,7 +37,13 @@ let args = [
     '-y', '-hide_banner',
     '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
     '-i', inputFile,
-    '-map', '0',
+    // Map video + audio + subs, skip attachments + data streams.
+    // UHD Blu-ray remuxes carry cover-art attachments (cover.jpg, mimetype
+    // image/jpeg) which ffmpeg tries to decode as PNG/MJPEG when present
+    // under -map 0; without -c:t copy this fails. Easier to drop them.
+    '-map', '0:v',
+    '-map', '0:a?',
+    '-map', '0:s?',
     '-c:v', 'av1_nvenc',
     '-preset', 'p7',
     '-tune', 'hq',
