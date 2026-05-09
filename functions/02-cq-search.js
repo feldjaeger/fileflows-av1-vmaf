@@ -86,7 +86,22 @@ if (!isFinite(duration) || duration <= sampleSec * 5) {
 }
 Logger.ILog('CQ Search: duration='+duration.toFixed(1)+'s, HDR='+hdr+', grid=['+cqGrid.join(',')+']');
 
-// ----- 2. extract 4 reference samples ------------------------------
+// ----- 2. lossless-re-encode 4 reference samples -------------------
+//
+// Stream-copy (-c copy) seeks to the nearest keyframe ≤ requested
+// position. HEVC source and AV1 re-encode have different GOP
+// structures, so the ref/dist samples can land on different
+// keyframes, leading libvmaf to compare misaligned frame pairs.
+// Symptom on Avatar: harmonic mean ~75 against arithmetic mean ~90
+// at every CQ candidate — wide gap = some frame pairs got garbage
+// scores due to misalignment.
+//
+// ffv1 -level 3 is intra-only mathematically lossless. Every frame
+// is a keyframe → no GOP-boundary offsets, the av1_nvenc re-encode
+// of each ref-sample aligns frame-for-frame and libvmaf compares the
+// actually-corresponding frames. Native pix-fmt fidelity (10-bit
+// HDR stays 10-bit, 8-bit stays 8-bit). Files are big (~100 MB/s
+// for 4K HDR) but only kept for the duration of the search.
 let positions = [0.20, 0.40, 0.60, 0.80].map(p =>
     Math.max(0, Math.floor(duration * p) - Math.floor(sampleSec / 2))
 );
@@ -100,9 +115,9 @@ for (let i = 0; i < positions.length; i++) {
             '-ss', String(positions[i]),
             '-t',  String(sampleSec),
             '-i',  inputFile,
-            '-map', '0:V:0',                 // first real video, no attached_pic
-            '-c',   'copy',
-            '-avoid_negative_ts', 'make_zero',
+            '-map', '0:V:0',                       // first real video, no attached_pic
+            '-c:v', 'ffv1', '-level', '3',         // mathematically lossless, intra-only
+            '-an', '-sn', '-dn',                   // strip everything but video
             out
         ]
     });
@@ -112,7 +127,7 @@ for (let i = 0; i < positions.length; i++) {
     }
     refSamples.push(out);
 }
-Logger.ILog('CQ Search: extracted '+refSamples.length+' × '+sampleSec+'s ref samples');
+Logger.ILog('CQ Search: lossless-extracted '+refSamples.length+' × '+sampleSec+'s ref samples (ffv1)');
 
 // ----- 3. for each CQ, encode samples + VMAF -----------------------
 function encodeArgs(input, output, cq) {
