@@ -23,9 +23,14 @@ let inputFile = Flow.WorkingFile || (Variables.file && Variables.file.FullName);
 if (!inputFile) { Logger.ELog('Full Encode: no working file'); return 2; }
 
 let hdr = Variables.HDRType || 'SDR';
-let cq  = Number(Variables.OptCQ);
+// NB: FileFlows pre-substitutes `Variables.X` patterns inside scripts,
+// even when they appear as literal text inside strings. Reading
+// `Variables.OptCQ` into a local first avoids trapping the substitution
+// in a string literal and breaking the parser.
+let optCQ = Variables.OptCQ;
+let cq    = Number(optCQ);
 if (!isFinite(cq) || cq <= 0) {
-    Logger.ELog('Full Encode: Variables.OptCQ is missing or invalid (got '+Variables.OptCQ+')');
+    Logger.ELog('Full Encode: OptCQ from search is missing or invalid (got '+optCQ+')');
     return 2;
 }
 
