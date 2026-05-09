@@ -71,6 +71,18 @@ let cqGrid = (hdr === 'SDR')
 // descending = highest CQ (smallest file) first
 cqGrid.sort((a, b) => b - a);
 
+// Quality-first override: if the grid was reduced to a single CQ value
+// (typically by setting CQGrid_HDR='18' / CQGrid_SDR='X' in Variables),
+// skip the search entirely and pass that CQ straight through. Useful for
+// 4K HDR content where VMAF scores systematically overestimate quality
+// and you've decided empirically on a fixed CQ.
+if (cqGrid.length === 1) {
+    Variables.OptCQ         = cqGrid[0];
+    Variables.SearchSummary = 'CQ='+cqGrid[0]+' (search skipped — single-value grid)';
+    Logger.ILog('CQ Search: '+Variables.SearchSummary);
+    return 1;
+}
+
 // ----- 1. probe duration -------------------------------------------
 let probe = Flow.Execute({
     command: ffprobe,
